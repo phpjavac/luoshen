@@ -5,12 +5,15 @@ const express = require("express");
 const app = express();
 const giveTo = require("./lib/give_to");
 const schedule = require("node-schedule");
+const jiraUserList = require('./jira.userList.json')
+const qqUserList = require('./qq.userList.json')
 
 const account = process.env.qq;;
 const client = createClient(account);
+
 //监听上线事件
 client.on("system.online", () => {
-  console.log("Logged in!");
+  // console.log("Logged in!");
   app.listen(1234, () => {
     console.log(`Example app listening at http://localhost:${1234}`);
   });
@@ -22,19 +25,27 @@ app.all("/", (res, req, next) => {
 });
 //监听消息并回复
 client.on("message", async (event) => {
-  console.log(event.group_id);
+  let message = '';
   if (event.message_type === "group") {
+    // if(event.group_id !== 185572890) return;
     const userMemberList = await client.getGroupMemberList(event.group_id);
-    if (event.raw_message.includes("分配")) {
+    if (event.raw_message.includes("at")) {
       const data = event.raw_message.split(" ");
-      event.reply(`开始分配${data[2]}的任务`);
-      giveTo(data[1], data[2], data[3])
-        .then((res) => {
-          event.reply(res);
-        })
-        .catch((err) => {
-          event.reply(err);
-        });
+      if(data[0] !== '分配') return;
+      event.reply(`开始分配 [CQ:at,qq=${qqUserList[data[1]]},text=@${data[1]}] 的任务`);
+      let [action, name, ...tasks] = data;
+      let promiseArr = []
+      for(let i =0;i<tasks.length;i++){
+        promiseArr.push(giveTo(jiraUserList[data[1]], tasks[i].split(':')[0], tasks[i].split(':')[1]))
+      }
+      Promise.all(promiseArr).then(res => {
+        message += res.join('\n')
+      }).catch(e => {
+        message+=e
+      }).finally(() => {
+        event.reply(message);
+        message = ''
+      })
       return;
     } else if (event.raw_message.includes("拍一拍")) {
       userMemberList.data.forEach((item) => {
