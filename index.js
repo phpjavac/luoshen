@@ -29,7 +29,7 @@ client.on("message", async (event) => {
   if (event.message_type === "group") {
     // if(event.group_id !== 185572890) return;
     const userMemberList = await client.getGroupMemberList(event.group_id);
-    if (event.raw_message.includes("at")) {
+    if (event.raw_message.includes("分配")) {
       const data = event.raw_message.split(" ");
       if(data[0] !== '分配') return;
       event.reply(`开始分配 [CQ:at,qq=${qqUserList[data[1]]},text=@${data[1]}] 的任务`);
