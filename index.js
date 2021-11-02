@@ -5,12 +5,20 @@ const express = require("express");
 const app = express();
 const giveTo = require("./lib/give_to");
 const schedule = require("node-schedule");
-const jiraUserList = require('./jira.userList.json')
-const qqUserList = require('./qq.userList.json')
+const jiraUserList = require("./jira.userList.json");
+const qqUserList = require("./qq.userList.json");
+const qunList = require("./qun.json");
+const testList = require("./test.json");
 
-const account = process.env.qq;;
+const account = process.env.qq;
 const client = createClient(account);
+function deleteNum(str) {
+  let reg = /[0-9]+/g;
 
+  let str1 = str.replace(reg, "");
+
+  return str1;
+}
 //监听上线事件
 client.on("system.online", () => {
   // console.log("Logged in!");
@@ -20,34 +28,71 @@ client.on("system.online", () => {
 });
 app.all("/", (res, req, next) => {
   console.log(res.query, req);
-  
+
   next();
+});
+app.post("/v1/api/gitlab/hooks/Pipeline", (req, res) => {
+  const { status } = req.body.object_attributes;
+  const { message } = req.body.commit;
+  const pattern = /\[.*\]/;
+  try {
+    const task = message.match(pattern)[0].replace("[", "").replace("]", "");
+    const testName = deleteNum(task.replace("-", ""));
+    const taskUrl = `findsoft.com.cn:8888/browse/${task}`;
+    const qunNumber = qunList[testName];
+    const testNumber = qunList[testName];
+    let mess = "";
+    switch (status) {
+      case "success":
+        mess = `[CQ:at,qq=${testNumber},text=@${qunNumber}] 前端更新项目成功 可以开始测试了 任务号： ${task} ; jira链接： ${taskUrl}`;
+        break;
+
+      default:
+        break;
+    }
+  } catch (error) {}
+  client.sendGroupMsg(qunNumber, mess);
+  res.send("success");
 });
 //监听消息并回复
 client.on("message", async (event) => {
-  let message = '';
+  let message = "";
+  if (event.message_type !== "group") {
+    if (event.raw_message.includes("分配")) {
+      const data = event.raw_message.split(" ");
+      if (data[0] !== "分配") return;
+      event.reply(
+        `开始分配 [CQ:at,qq=${qqUserList[data[1]]},text=@${data[1]}] 的任务`
+      );
+      let [action, name, ...tasks] = data;
+      let promiseArr = [];
+      for (let i = 0; i < tasks.length; i++) {
+        promiseArr.push(
+          giveTo(
+            jiraUserList[data[1]],
+            tasks[i].split(":")[0],
+            tasks[i].split(":")[1]
+          )
+        );
+      }
+      Promise.all(promiseArr)
+        .then((res) => {
+          message += res.join("\n");
+        })
+        .catch((e) => {
+          message += e;
+        })
+        .finally(() => {
+          event.reply(message);
+          message = "";
+        });
+      return;
+    }
+  }
   if (event.message_type === "group") {
     // if(event.group_id !== 185572890) return;
-    const userMemberList = await client.getGroupMemberList(event.group_id);
-    if (event.raw_message.includes("at")) {
-      const data = event.raw_message.split(" ");
-      if(data[0] !== '分配') return;
-      event.reply(`开始分配 [CQ:at,qq=${qqUserList[data[1]]},text=@${data[1]}] 的任务`);
-      let [action, name, ...tasks] = data;
-      let promiseArr = []
-      for(let i =0;i<tasks.length;i++){
-        promiseArr.push(giveTo(jiraUserList[data[1]], tasks[i].split(':')[0], tasks[i].split(':')[1]))
-      }
-      Promise.all(promiseArr).then(res => {
-        message += res.join('\n')
-      }).catch(e => {
-        message+=e
-      }).finally(() => {
-        event.reply(message);
-        message = ''
-      })
-      return;
-    } else if (event.raw_message.includes("拍一拍")) {
+    // const userMemberList = await client.getGroupMemberList(event.group_id);
+    if (event.raw_message.includes("拍一拍")) {
       userMemberList.data.forEach((item) => {
         client.sendGroupPoke(event.group_id, item.user_id);
       });
@@ -89,7 +134,6 @@ client
 //   const message = await getWeather()
 //   client.sendGroupMsg("706809115", message)
 // });
-
 
 const getWeather = () => {
   return new Promise((resolve, reject) => {
