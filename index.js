@@ -9,8 +9,10 @@ const jiraUserList = require("./jira.userList.json");
 const qqUserList = require("./qq.userList.json");
 const qunList = require("./qun.json");
 const testList = require("./test.json");
+const JIRA_URL = process.env.JIRA_URL;
 
 const account = process.env.qq;
+const password = process.env.password;
 const client = createClient(account);
 function deleteNum(str) {
   let reg = /[0-9]+/g;
@@ -31,27 +33,28 @@ app.all("/", (res, req, next) => {
 
   next();
 });
-app.post("/v1/api/gitlab/hooks/Pipeline", (req, res) => {
+app.post("/v1/api/gitlab/hooks/Pipeline", async (req, res) => {
   const { status } = req.body.object_attributes;
   const { message } = req.body.commit;
   const pattern = /\[.*\]/;
   try {
     const task = message.match(pattern)[0].replace("[", "").replace("]", "");
     const testName = deleteNum(task.replace("-", ""));
-    const taskUrl = `findsoft.com.cn:8888/browse/${task}`;
+    const taskUrl = `${JIRA_URL}browse/${task}`;
     const qunNumber = qunList[testName];
-    const testNumber = qunList[testName];
+    const testNumber = testList[testName];
     let mess = "";
     switch (status) {
       case "success":
-        mess = `[CQ:at,qq=${testNumber},text=@${qunNumber}] 前端更新项目成功 可以开始测试了 任务号： ${task} ; jira链接： ${taskUrl}`;
+        const taskTitle = await giveTo.getTaskTitle(task);
+        mess = `[CQ:at,qq=${testNumber},text=@${testNumber}] 前端更新项目成功 可以开始测试了 任务： ${task}-${taskTitle} ; jira链接： ${taskUrl}`;
         break;
 
       default:
         break;
     }
+    client.sendGroupMsg(qunNumber, mess);
   } catch (error) {}
-  client.sendGroupMsg(qunNumber, mess);
   res.send("success");
 });
 //监听消息并回复
@@ -68,7 +71,7 @@ client.on("message", async (event) => {
       let promiseArr = [];
       for (let i = 0; i < tasks.length; i++) {
         promiseArr.push(
-          giveTo(
+          giveTo.init(
             jiraUserList[data[1]],
             tasks[i].split(":")[0],
             tasks[i].split(":")[1]
@@ -87,6 +90,23 @@ client.on("message", async (event) => {
           message = "";
         });
       return;
+    } else if (event.raw_message.includes("csv")) {
+      const data = event.raw_message.split(" ");
+      if (data[0] !== "csv") return;
+      giveTo.SsrtoCsv(data[1]).then(async (res) => {
+        if (res === "done") {
+          const gfs = client.acquireGfs(706809115);
+          await gfs.upload("./data.csv");
+          gfs.ls().then(async (r) => {
+            const data = r.find((rf) => rf.name === "data.csv");
+            const downUrl = await gfs.download(data.fid);
+            event.reply(downUrl.url);
+            setTimeout(() => {
+              gfs.rm(data.fid)
+            }, 1000 * 60 * 10);
+          });
+        }
+      });
     }
   }
   if (event.message_type === "group") {
@@ -157,12 +177,17 @@ const getWeather = () => {
  * 缺点是需要过滑块，可能会报环境异常
  * 优点是一劳永逸
  */
-// client.on("system.login.slider", function (event) { //监听滑动验证码事件
-//   process.stdin.once("data", (input) => {
-//     this.sliderLogin(input); //输入ticket
-//   });
-// }).on("system.login.device", function (event) { //监听登录保护验证事件
-//   process.stdin.once("data", () => {
-//     this.login(); //验证完成后按回车登录
-//   });
-// }).login("password"); //需要填写密码或md5后的密码
+// client
+//   .on("system.login.slider", function (event) {
+//     //监听滑动验证码事件
+//     process.stdin.once("data", (input) => {
+//       this.sliderLogin(input); //输入ticket
+//     });
+//   })
+//   .on("system.login.device", function (event) {
+//     //监听登录保护验证事件
+//     process.stdin.once("data", () => {
+//       this.login(); //验证完成后按回车登录
+//     });
+//   })
+//   .login(password); //需要填写密码或md5后的密码
