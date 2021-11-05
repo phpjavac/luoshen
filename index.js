@@ -10,7 +10,7 @@ const qqUserList = require("./qq.userList.json");
 const qunList = require("./qun.json");
 const testList = require("./test.json");
 const JIRA_URL = process.env.JIRA_URL;
-
+app.use(express.json());
 const account = process.env.qq;
 const password = process.env.password;
 const client = createClient(account);
@@ -21,6 +21,9 @@ function deleteNum(str) {
 
   return str1;
 }
+app.listen(1234, () => {
+  console.log(`Example app listening at http://localhost:${1234}`);
+});
 //监听上线事件
 client.on("system.online", () => {
   // console.log("Logged in!");
@@ -56,6 +59,25 @@ app.post("/v1/api/gitlab/hooks/Pipeline", async (req, res) => {
     client.sendGroupMsg(qunNumber, mess);
   } catch (error) {}
   res.send("success");
+});
+app.post("/v1/api/jira/hooks", async (req, res) => {
+  if (req.body.webhookEvent === "jira:issue_updated") {
+    const data = req.body;
+    if (
+      data.changelog.items[0].fromString === "开发完成" &&
+      data.changelog.items[0].toString === "开发中"
+    ) {
+      const mess = `${data.user.displayName}的${
+        data.issue.key
+      }任务被重新打开了，请及时处理！
+      [CQ:at,qq=${qqUserList[data.user.displayName]},text=@${
+        qqUserList[data.user.displayName]
+      }] ${JIRA_URL}browse/${data.issue.key}
+      `;
+      console.log(mess);
+      client.sendGroupMsg(706809115, mess);
+    }
+  }
 });
 //监听消息并回复
 client.on("message", async (event) => {
@@ -102,7 +124,7 @@ client.on("message", async (event) => {
             const downUrl = await gfs.download(data.fid);
             event.reply(downUrl.url);
             setTimeout(() => {
-              gfs.rm(data.fid)
+              gfs.rm(data.fid);
             }, 1000 * 60 * 10);
           });
         }
@@ -137,13 +159,13 @@ client.on("message", async (event) => {
  * 优点是不需要过滑块和设备锁
  * 缺点是万一token失效，无法自动登录，需要重新扫码
  */
-client
-  .on("system.login.qrcode", function (event) {
-    process.stdin.once("data", () => {
-      this.login(); //扫码后按回车登录
-    });
-  })
-  .login(); //这里不填写密码
+// client
+//   .on("system.login.qrcode", function (event) {
+//     process.stdin.once("data", () => {
+//       this.login(); //扫码后按回车登录
+//     });
+//   })
+//   .login(); //这里不填写密码
 
 // const job = schedule.scheduleJob('01 20 * * *', async () => {
 //   const message = await getWeather()
